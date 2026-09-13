@@ -154,6 +154,12 @@ body {
   color: var(--muted);
 }
 
+.move-notice {
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+
 .step-edit {
   display: flex;
   align-items: center;

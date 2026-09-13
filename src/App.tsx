@@ -3,6 +3,7 @@ import { Card } from './components/Card';
 import { DRAFT_MESSAGES, clearDraft, getDefaultStorage, loadDraft, saveDraft } from './lib/draft';
 import { collectBoundaries, measureCard, measureTopCorrection, type OverflowResult } from './lib/layout';
 import { printCard } from './lib/print';
+import { moveStep, type StepMoveDirection } from './lib/reorder';
 import { resolveTemplateApply } from './lib/templates';
 import { codePointLength, normalizeField, validateCard } from './lib/validation';
 import { EMPTY_DATA, LIMITS, RISK_LEVELS, type CardData } from './types';
@@ -24,7 +25,11 @@ export function App() {
   const [draftFromRestore, setDraftFromRestore] = useState(false);
   // 存储不可用/配额超限/草稿损坏的可区分提示。
   const [draftError, setDraftError] = useState<string | null>(null);
+  // 步骤换位后的简短状态消息（说明被移动步骤的新序号）；其他编辑时清除。
+  const [moveNotice, setMoveNotice] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  // 各步骤输入框的引用，换位后把焦点落回被移动步骤对应的文本框。
+  const stepInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   // 已应用的顶部补偿量，避免重复写样式。
   const correctionRef = useRef(0);
   // 挂载时解析一次本机存储；null 表示存储不可用（自动保存时会重试解析）。
@@ -113,11 +118,21 @@ export function App() {
     }
   }, [data]);
 
+  // 换位后等待 DOM 提交，把输入焦点落回被移动步骤在其新位置上的文本框。
+  const pendingFocusRef = useRef<number | null>(null);
+  useEffect(() => {
+    const target = pendingFocusRef.current;
+    if (target === null) return;
+    pendingFocusRef.current = null;
+    stepInputRefs.current[target]?.focus();
+  }, [data]);
+
   /** 所有编辑共用的入口：撤销旧结论与打印错误，并标记需要自动保存。 */
   const applyEdit = (fn: (prev: CardData) => CardData) => {
     dirtyRef.current = true;
     setPrintError(null);
     setOverflow(null); // 立即撤销旧结论
+    setMoveNotice(null); // 普通编辑清除上一次换位的序号提示
     setData(fn);
   };
 
@@ -140,6 +155,24 @@ export function App() {
   const removeStep = (index: number) => {
     if (data.steps.length <= LIMITS.steps.min) return;
     applyEdit((prev) => ({ ...prev, steps: prev.steps.filter((_, i) => i !== index) }));
+  };
+
+  /**
+   * 上移/下移一条步骤：以当前 steps 数组为唯一顺序来源，只交换相邻两项。
+   * 边界（首条上移、末条下移、只有一条）由纯函数判定为 null，
+   * 此时直接返回——不经过 applyEdit，因此内容、保存时间、测量结论与
+   * 打印可用性都不改变，也不产生草稿写入。
+   * 有效移动沿既有编辑入口触发字段校验、草稿自动保存、卡片重新编号
+   * 与安全区重测，并在 DOM 提交后把焦点落回被移动步骤的新文本框。
+   */
+  const moveStepAt = (index: number, direction: StepMoveDirection) => {
+    const result = moveStep(data.steps, index, direction);
+    if (result === null) return;
+    pendingFocusRef.current = result.index;
+    applyEdit((prev) => ({ ...prev, steps: result.steps }));
+    // 状态消息在 applyEdit 清空状态之后再设置（同一批次渲染中保留最终值），
+    // 说明被移动步骤的新序号；下次任意编辑时由 applyEdit 清除。
+    setMoveNotice(`已${direction === 'up' ? '上移' : '下移'}：该步骤现在是第 ${result.index + 1} 步。`);
   };
 
   /**
@@ -294,6 +327,9 @@ export function App() {
                 <div className="step-edit" key={index}>
                   <span className="step-edit-no">{index + 1}.</span>
                   <input
+                    ref={(el) => {
+                      stepInputRefs.current[index] = el;
+                    }}
                     type="text"
                     value={step}
                     maxLength={200}
@@ -301,6 +337,26 @@ export function App() {
                     onChange={(e) => updateStep(index, e.target.value)}
                     aria-invalid={Boolean(validation.errors[`step_${index}`])}
                   />
+                  <button
+                    type="button"
+                    className="btn-small"
+                    onClick={() => moveStepAt(index, 'up')}
+                    disabled={index === 0}
+                    aria-label={`上移第 ${index + 1} 步`}
+                    title={index === 0 ? '已是第一条，无法上移' : '向上移动一位'}
+                  >
+                    上移
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-small"
+                    onClick={() => moveStepAt(index, 'down')}
+                    disabled={index === data.steps.length - 1}
+                    aria-label={`下移第 ${index + 1} 步`}
+                    title={index === data.steps.length - 1 ? '已是最后一条，无法下移' : '向下移动一位'}
+                  >
+                    下移
+                  </button>
                   <button
                     type="button"
                     className="btn-small"
@@ -313,6 +369,11 @@ export function App() {
               );
             })}
           </div>
+          {moveNotice && (
+            <p className="move-notice" role="status" aria-live="polite">
+              {moveNotice}
+            </p>
+          )}
           {validation.errors.steps && <span className="field-error">{validation.errors.steps}</span>}
           <button type="button" className="btn-secondary" onClick={addStep} disabled={data.steps.length >= LIMITS.steps.max}>
             + 添加步骤
