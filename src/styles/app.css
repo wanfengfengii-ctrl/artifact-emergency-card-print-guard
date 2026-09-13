@@ -1,0 +1,332 @@
+/* Noto Sans SC 随应用打包（@fontsource，本地 woff2，无在线依赖）。
+   字体文件由 main.tsx 中 import 的 fontsource css 通过 @font-face 声明。 */
+
+:root {
+  --ink: #1a1a1a;
+  --muted: #666;
+  --line: #d8d8d8;
+  --bad: #c0392b;
+  --ok: #1e7d32;
+  --warn: #b36b00;
+  --accent: #234;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #eceef1;
+  color: var(--ink);
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.app {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+  padding: 28px;
+  min-height: 100vh;
+}
+
+/* ---------------- 录入面板 ---------------- */
+
+.form-panel {
+  flex: 0 0 380px;
+  max-width: 380px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-title {
+  font-size: 18px;
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-count {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.field input[type='text'] {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: inherit;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--bad);
+}
+
+.field-error {
+  color: var(--bad);
+  font-size: 12px;
+}
+
+.risk-options {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.risk-option {
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.steps-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-edit-no {
+  flex: 0 0 24px;
+  font-size: 14px;
+}
+
+.step-edit input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-small {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: #f6f6f6;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-small:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  align-self: flex-start;
+  border: 1px dashed var(--accent);
+  background: none;
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.verdict {
+  min-height: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.verdict-ok {
+  color: var(--ok);
+  margin: 0;
+}
+
+.verdict-bad {
+  color: var(--bad);
+  margin: 0;
+}
+
+.verdict-wait {
+  color: var(--warn);
+  margin: 0;
+}
+
+.verdict-item {
+  display: inline-block;
+  padding-left: 0.5em;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 11px;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-primary:disabled {
+  background: #9aa5ad;
+  cursor: not-allowed;
+}
+
+/* ---------------- 预览面板与 A5 卡片 ---------------- */
+
+.preview-panel {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: auto;
+}
+
+.card {
+  position: relative;
+  width: 148mm;
+  height: 210mm;
+  padding: 10mm; /* 四边安全区 10mm */
+  background: #fff;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.18);
+  color: #000;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-weight: 400;
+  /* 不截断、不缩放：允许内容自然流出，交由测量判定越界 */
+  overflow: visible;
+}
+
+/* 安全区参考线：仅屏幕显示，打印时隐藏 */
+.card-guide {
+  position: absolute;
+  inset: 10mm;
+  border: 0.15mm dashed rgba(192, 57, 43, 0.45);
+  pointer-events: none;
+}
+
+.card-title {
+  margin: 0 0 4mm; /* 主标题后空 4mm */
+  font-size: 6mm;
+  line-height: 8mm;
+  font-weight: 700;
+  text-align: left;
+}
+
+.card-line,
+.card-subtitle {
+  font-size: 4mm;
+  line-height: 5.6mm;
+  text-align: left;
+  white-space: normal; /* 正常空白折叠 */
+  overflow-wrap: anywhere; /* 码点间自然换行，不截断、不缩放 */
+}
+
+.card-line {
+  margin: 0 0 2mm; /* 各信息行后空 2mm */
+}
+
+.card-label {
+  font-weight: 700;
+}
+
+.card-subtitle {
+  margin: 0 0 2mm; /* 步骤小标题后空 2mm */
+  font-weight: 700;
+}
+
+.card-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card-step {
+  position: relative;
+  margin: 0 0 2mm; /* 条目间距 2mm */
+  padding-left: 7mm; /* 悬挂缩进 7mm */
+  font-size: 4mm;
+  line-height: 5.6mm;
+  text-align: left;
+  white-space: normal;
+}
+
+.step-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.step-text {
+  overflow-wrap: anywhere;
+}
+
+/* ---------------- 打印媒体：仅保留一张卡片 ---------------- */
+
+@page {
+  size: 148mm 210mm; /* A5 纵向 */
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff;
+  }
+
+  .app {
+    display: block;
+    padding: 0;
+    min-height: 0;
+  }
+
+  .form-panel {
+    display: none !important;
+  }
+
+  .preview-panel {
+    display: block;
+    overflow: visible;
+  }
+
+  .card {
+    box-shadow: none;
+    margin: 0;
+    width: 148mm;
+    height: 210mm;
+  }
+
+  .card-guide {
+    display: none;
+  }
+}

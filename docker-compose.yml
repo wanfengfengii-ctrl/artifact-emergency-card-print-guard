@@ -1,0 +1,19 @@
+services:
+  # 页面服务：端口可由 WEB_PORT 覆盖（默认 8080）
+  web:
+    build:
+      context: .
+      target: web
+    image: relic-emergency-card-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    restart: unless-stopped
+
+  # 一次性校验：docker compose run --rm verify
+  # 运行 Vitest 单元测试并执行生产构建，结束即退出，不常驻。
+  verify:
+    build:
+      context: .
+      target: verify
+    image: relic-emergency-card-verify
+    profiles: ["verify"]
