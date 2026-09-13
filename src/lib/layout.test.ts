@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CARD_MM } from '../types';
-import { SAFE_AREA, measureCard, mmToPx, pxToMm } from './layout';
+import { SAFE_AREA, computeTopCorrection, measureCard, mmToPx, pxToMm } from './layout';
 
 const SCALE = 96 / 25.4;
 
@@ -46,6 +46,27 @@ describe('安全区常量', () => {
 
   it('毫米与像素换算', () => {
     expect(pxToMm(mmToPx(25.4))).toBeCloseTo(25.4);
+  });
+});
+
+describe('computeTopCorrection', () => {
+  it('字形盒未伸出行盒时无需补偿', () => {
+    expect(
+      computeTopCorrection([
+        { lineBoxTop: 100, rectTop: 100 },
+        { lineBoxTop: 130, rectTop: 131 },
+      ]),
+    ).toBe(0);
+  });
+
+  it('取各行向上外溢量的最大值', () => {
+    expect(
+      computeTopCorrection([
+        { lineBoxTop: 100, rectTop: 98 }, // 上溢 2px
+        { lineBoxTop: 130.23, rectTop: 128.23 }, // 上溢 2px
+        { lineBoxTop: 160, rectTop: 159 }, // 上溢 1px
+      ]),
+    ).toBeCloseTo(2);
   });
 });
 

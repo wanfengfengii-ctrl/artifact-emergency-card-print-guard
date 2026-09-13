@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Card } from './components/Card';
-import { collectBoundaries, measureCard, type OverflowResult } from './lib/layout';
+import { collectBoundaries, measureCard, measureTopCorrection, type OverflowResult } from './lib/layout';
 import { printCard } from './lib/print';
 import { codePointLength, normalizeField, validateCard } from './lib/validation';
 import { EMPTY_DATA, LIMITS, RISK_LEVELS, type CardData } from './types';
@@ -11,38 +11,51 @@ export function App() {
   const [overflow, setOverflow] = useState<OverflowResult | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  // 已应用的顶部补偿量，避免重复写样式。
+  const correctionRef = useRef(0);
 
   const validation = validateCard(data);
 
+  /**
+   * 依据真实布局完成一次完整测量：
+   * 1) 实测字形盒相对行盒的向上外溢量，写入 CSS 变量让内容整体下移
+   *    （补偿随包字体行高与字体度量之差）；
+   * 2) 应用后强制重排，再测全部文字/编号边界与安全区。
+   * 在 useLayoutEffect 中同步完成，旧结论已在编辑时撤销，且不会闪现错判。
+   */
   const remeasure = useCallback(() => {
     const el = cardRef.current;
     if (!el) return;
+
+    const correction = measureTopCorrection(el);
+    if (Math.abs(correction - correctionRef.current) > 0.001) {
+      correctionRef.current = correction;
+      el.style.setProperty('--top-correction', `${correction}px`);
+    }
+
     setOverflow(measureCard(el, collectBoundaries(el)));
   }, []);
 
-  // 每次编辑后（DOM 提交）重测；字体加载完成后亦重测，确保按真实字形测量。
-  useEffect(() => {
+  // 每次编辑后（DOM 提交、绘制前）重测。
+  useLayoutEffect(() => {
     remeasure();
   }, [data, remeasure]);
 
   useEffect(() => {
     let cancelled = false;
     const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
-    fonts?.ready.then(() => {
-      if (!cancelled) remeasure();
-    });
-    // fontsource 按 unicode-range 分包，新文字触发分包加载后必须重测，
-    // 否则会按后备字体留下过期结论。
-    const onFontLoaded = () => {
+    const rerun = () => {
       if (!cancelled) remeasure();
     };
-    fonts?.addEventListener?.('loadingdone', onFontLoaded);
-    const onResize = () => remeasure();
-    window.addEventListener('resize', onResize);
+    fonts?.ready.then(rerun);
+    // fontsource 按 unicode-range 分包，新文字触发分包加载后必须重测，
+    // 否则会按后备字体留下过期结论。
+    fonts?.addEventListener?.('loadingdone', rerun);
+    window.addEventListener('resize', rerun);
     return () => {
       cancelled = true;
-      fonts?.removeEventListener?.('loadingdone', onFontLoaded);
-      window.removeEventListener('resize', onResize);
+      fonts?.removeEventListener?.('loadingdone', rerun);
+      window.removeEventListener('resize', rerun);
     };
   }, [remeasure]);
 

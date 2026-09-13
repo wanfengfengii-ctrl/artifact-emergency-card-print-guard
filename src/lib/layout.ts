@@ -21,7 +21,7 @@ export const SAFE_AREA: SafeArea = {
 export interface Boundary {
   /** 测量对象说明，用于越界提示。 */
   label: string;
-  /** 视口坐标系下的矩形（真实文字行片段或编号矩形）。 */
+  /** 视口坐标系下的矩形，四边均为浏览器实测的文字行片段边界。 */
   rect: DOMRect | DOMRectReadOnly;
 }
 
@@ -91,28 +91,40 @@ export function measureCard(cardEl: HTMLElement, boundaries: Boundary[]): Overfl
   };
 }
 
+interface TextLine {
+  label: string;
+  /** 同一视觉行内合并后的实测片段矩形（四边均为真实字形盒边界）。 */
+  rect: DOMRect;
+  /** 该行所属的排版宿主与行序号，用于推算行盒位置。 */
+  host: HTMLElement;
+  lineIndex: number;
+}
+
+const HOST_SELECTOR = '.card-title,.card-line,.card-subtitle,.card-step';
+
 /**
- * 收集卡片内带 data-measure 属性元素的“真实文字边界”，按视觉行给出。
+ * 收集卡片内带 data-measure 元素的“真实文字边界”，按视觉行给出。
  *
- * 水平方向：用 Range 选中元素内容后取 getClientRects，浏览器按实际排版
- * 返回每个文字行片段的矩形，其左右边界是文字真实到达处。直接使用块级
- * 元素的 getBoundingClientRect 会得到铺满整行内容宽的行盒，短文字也会
- * 误判为贴到右边缘。
+ * 四边都使用 Range.getClientRects() 的实测片段矩形：
+ * - 水平方向：块级元素的 getBoundingClientRect 是铺满整行的行盒，
+ *   短文字也会误报贴到右边缘；片段矩形的左右端才是文字真实到达处。
+ * - 垂直方向：片段矩形是浏览器按字体度量绘制的字形盒，可能高于声明
+ *   行高并向上/向下伸出行盒——这正是必须被检出的真实边界，不能用
+ *   按行高重建的行盒代替（否则主标题字形越过安全区上缘会漏检）。
  *
- * 垂直方向：Range/内联矩形是字形盒，受字体 ascent/descent 影响会高于
- * 规范声明的行高（8mm/5.6mm）。上下边界改以块级宿主的行盒为准：
- * 首行行盒顶即块内容顶，每行高为声明行高，保证贴边判定符合版式定义。
+ * 同一视觉行的多个内联片段（如“标签：”+“值”）按 top 分组合并。
  */
 export function collectBoundaries(cardEl: HTMLElement): Boundary[] {
-  const result: Boundary[] = [];
+  return collectTextLines(cardEl).map(({ label, rect }) => ({ label, rect }));
+}
+
+/** @internal 供顶部字形补偿量计算复用。 */
+export function collectTextLines(cardEl: HTMLElement): TextLine[] {
+  const result: TextLine[] = [];
 
   cardEl.querySelectorAll<HTMLElement>('[data-measure]').forEach((el) => {
     const label = el.dataset.measure ?? el.textContent ?? '文本';
-
-    const host = (el.closest<HTMLElement>('.card-title,.card-line,.card-subtitle,.card-step') ??
-      el) as HTMLElement;
-    const hostRect = host.getBoundingClientRect();
-    const lineHeight = parseFloat(getComputedStyle(host).lineHeight) || hostRect.height;
+    const host = (el.closest<HTMLElement>(HOST_SELECTOR) ?? el) as HTMLElement;
 
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -120,12 +132,13 @@ export function collectBoundaries(cardEl: HTMLElement): Boundary[] {
 
     if (fragments.length === 0) {
       const rect = el.getBoundingClientRect();
-      if (rect.width !== 0 || rect.height !== 0) result.push({ label, rect });
+      if (rect.width !== 0 || rect.height !== 0) {
+        result.push({ label, rect: DOMRect.fromRect(rect), host, lineIndex: 0 });
+      }
       return;
     }
 
-    // 同一视觉行的多个内联片段（如“标签”+“值”）其矩形顶边相同，按此分组合并。
-    const groups = new Map<number, { left: number; right: number; top: number }>();
+    const groups = new Map<number, { left: number; right: number; top: number; bottom: number }>();
     for (const frag of fragments) {
       if (frag.width === 0 && frag.height === 0) continue;
       const key = Math.round(frag.top * 4);
@@ -134,20 +147,61 @@ export function collectBoundaries(cardEl: HTMLElement): Boundary[] {
         prev.left = Math.min(prev.left, frag.left);
         prev.right = Math.max(prev.right, frag.right);
         prev.top = Math.min(prev.top, frag.top);
+        prev.bottom = Math.max(prev.bottom, frag.bottom);
       } else {
-        groups.set(key, { left: frag.left, right: frag.right, top: frag.top });
+        groups.set(key, { left: frag.left, right: frag.right, top: frag.top, bottom: frag.bottom });
       }
     }
 
-    const lines = [...groups.values()].sort((a, b) => a.top - b.top);
-    lines.forEach((line, index) => {
-      const top = hostRect.top + index * lineHeight;
+    const lines = [...groups.entries()].sort((a, b) => a[1].top - b[1].top);
+    lines.forEach(([, g], lineIndex) => {
       result.push({
         label,
-        rect: new DOMRect(line.left, top, line.right - line.left, lineHeight),
+        host,
+        lineIndex,
+        rect: new DOMRect(g.left, g.top, g.right - g.left, g.bottom - g.top),
       });
     });
   });
 
   return result;
+}
+
+/**
+ * 纯函数：由各行的行盒顶与实测字形盒顶计算需要向下补偿的像素量。
+ * 字形盒向上伸出本行行盒（字体 ascent 大于行高半行距）时取最大外溢。
+ */
+export function computeTopCorrection(items: ReadonlyArray<{ lineBoxTop: number; rectTop: number }>): number {
+  let max = 0;
+  for (const { lineBoxTop, rectTop } of items) {
+    const spill = lineBoxTop - rectTop;
+    if (spill > max) max = spill;
+  }
+  return max;
+}
+
+/**
+ * 实测当前字体下字形盒相对行盒的向上外溢量（px）。
+ * 调用方据此把卡片内容整体下移，保证标准版式中字形盒也落在安全区内；
+ * 字体分包加载完成后需重新计算。
+ */
+export function measureTopCorrection(cardEl: HTMLElement): number {
+  const hostCache = new Map<HTMLElement, { top: number; lineHeight: number }>();
+  const hostBox = (host: HTMLElement) => {
+    let box = hostCache.get(host);
+    if (!box) {
+      const rect = host.getBoundingClientRect();
+      const lineHeight = parseFloat(getComputedStyle(host).lineHeight) || rect.height;
+      box = { top: rect.top, lineHeight };
+      hostCache.set(host, box);
+    }
+    return box;
+  };
+
+  return computeTopCorrection(
+    collectTextLines(cardEl).map(({ host, lineIndex, rect }) => {
+      const box = hostBox(host);
+      return { lineBoxTop: box.top + lineIndex * box.lineHeight, rectTop: rect.top };
+    }),
+  );
 }

@@ -235,6 +235,16 @@ body {
   pointer-events: none;
 }
 
+/*
+ * 内容层：--top-correction 由运行时按真实字体度量写入，
+ * 把字形盒相对行盒向上的外溢量整体下移，使首个实测文字边界
+ * 不早于安全区上缘。补偿量远小于 10mm 安全边距。
+ */
+.card-inner {
+  position: relative;
+  margin-top: var(--top-correction, 0px);
+}
+
 .card-title {
   margin: 0 0 4mm; /* 主标题后空 4mm */
   font-size: 6mm;
