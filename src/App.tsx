@@ -1,18 +1,33 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Card } from './components/Card';
+import { DRAFT_MESSAGES, clearDraft, getDefaultStorage, loadDraft, saveDraft } from './lib/draft';
 import { collectBoundaries, measureCard, measureTopCorrection, type OverflowResult } from './lib/layout';
 import { printCard } from './lib/print';
 import { codePointLength, normalizeField, validateCard } from './lib/validation';
 import { EMPTY_DATA, LIMITS, RISK_LEVELS, type CardData } from './types';
+
+/** 草稿保存时间的展示格式（本地时区、24 小时制）。 */
+function formatDraftTime(iso: string): string {
+  const time = new Date(iso);
+  return Number.isNaN(time.getTime()) ? iso : time.toLocaleString('zh-CN', { hour12: false });
+}
 
 export function App() {
   const [data, setData] = useState<CardData>(EMPTY_DATA);
   // 旧结论在每次编辑时立即撤销：null 表示尚无结论。
   const [overflow, setOverflow] = useState<OverflowResult | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  // 已恢复草稿的保存时间；null 表示本次会话未恢复草稿。
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+  // 存储不可用/配额超限/草稿损坏的可区分提示。
+  const [draftError, setDraftError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   // 已应用的顶部补偿量，避免重复写样式。
   const correctionRef = useRef(0);
+  // 挂载时解析一次本机存储；null 表示存储不可用。
+  const storageRef = useRef<Storage | null>(null);
+  // 用户首次输入后才自动保存；恢复草稿与清空重置不算编辑。
+  const dirtyRef = useRef(false);
 
   const validation = validateCard(data);
 
@@ -59,16 +74,45 @@ export function App() {
     };
   }, [remeasure]);
 
-  const update = (patch: Partial<CardData>) => {
+  // 挂载时尝试恢复本机草稿：恢复会更新 data，从而沿既有链路
+  // 触发表单校验与 useLayoutEffect 的真实布局重测；失败保持空表单可编辑。
+  useEffect(() => {
+    const storage = getDefaultStorage();
+    storageRef.current = storage;
+    const result = loadDraft(storage);
+    if (result.kind === 'ok') {
+      setRestoredAt(result.draft.updatedAt);
+      setData(result.draft.data);
+    } else if (result.kind === 'corrupt') {
+      setDraftError(DRAFT_MESSAGES.corrupt);
+    } else if (result.kind === 'unavailable') {
+      setDraftError(DRAFT_MESSAGES.unavailable);
+    }
+  }, []);
+
+  // 用户首次输入后自动保存完整草稿；成功保存消除此前的存储失败提示。
+  useEffect(() => {
+    if (!dirtyRef.current) return;
+    const outcome = saveDraft(storageRef.current, data);
+    setDraftError(
+      outcome.kind === 'ok' ? null : outcome.kind === 'quota' ? DRAFT_MESSAGES.quota : DRAFT_MESSAGES.unavailable,
+    );
+  }, [data]);
+
+  /** 所有编辑共用的入口：撤销旧结论与打印错误，并标记需要自动保存。 */
+  const applyEdit = (fn: (prev: CardData) => CardData) => {
+    dirtyRef.current = true;
     setPrintError(null);
     setOverflow(null); // 立即撤销旧结论
-    setData((prev) => ({ ...prev, ...patch }));
+    setData(fn);
+  };
+
+  const update = (patch: Partial<CardData>) => {
+    applyEdit((prev) => ({ ...prev, ...patch }));
   };
 
   const updateStep = (index: number, value: string) => {
-    setPrintError(null);
-    setOverflow(null);
-    setData((prev) => ({
+    applyEdit((prev) => ({
       ...prev,
       steps: prev.steps.map((s, i) => (i === index ? value : s)),
     }));
@@ -76,16 +120,24 @@ export function App() {
 
   const addStep = () => {
     if (data.steps.length >= LIMITS.steps.max) return;
-    setPrintError(null);
-    setOverflow(null);
-    setData((prev) => ({ ...prev, steps: [...prev.steps, ''] }));
+    applyEdit((prev) => ({ ...prev, steps: [...prev.steps, ''] }));
   };
 
   const removeStep = (index: number) => {
     if (data.steps.length <= LIMITS.steps.min) return;
+    applyEdit((prev) => ({ ...prev, steps: prev.steps.filter((_, i) => i !== index) }));
+  };
+
+  /** 清空草稿：删除存储、重置为空表单，并撤销旧测量结论与打印错误。 */
+  const handleClearDraft = () => {
+    if (!window.confirm('确定清空本机草稿并重置为空表单吗？')) return;
+    clearDraft(storageRef.current);
+    dirtyRef.current = false; // 空表单不立即回写为新草稿
+    setRestoredAt(null);
+    setDraftError(null);
     setPrintError(null);
     setOverflow(null);
-    setData((prev) => ({ ...prev, steps: prev.steps.filter((_, i) => i !== index) }));
+    setData(EMPTY_DATA);
   };
 
   const canPrint = validation.valid && overflow !== null && overflow.ok;
@@ -112,6 +164,16 @@ export function App() {
     <main className="app">
       <section className="form-panel" aria-label="藏品信息录入">
         <h1 className="form-title">库房渗水 · 文物应急处置卡</h1>
+
+        {(restoredAt !== null || draftError !== null) && (
+          <div className="draft-bar" role="status" aria-live="polite">
+            {restoredAt !== null && <p className="draft-restored">已恢复草稿（保存于 {formatDraftTime(restoredAt)}）</p>}
+            {draftError !== null && <p className="draft-error">{draftError}</p>}
+            <button type="button" className="btn-small" onClick={handleClearDraft}>
+              清空草稿
+            </button>
+          </div>
+        )}
 
         <label className="field">
           <span className="field-label">
