@@ -241,6 +241,57 @@ body {
   padding-left: 0.5em;
 }
 
+/* ---------------- 语音播报（仅屏幕端） ---------------- */
+
+.broadcast-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8f9fb;
+  padding: 10px 12px;
+}
+
+.broadcast-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.broadcast-actions .btn-secondary {
+  align-self: auto;
+}
+
+.broadcast-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.broadcast-hint p {
+  margin: 0;
+}
+
+.broadcast-idle {
+  color: var(--muted);
+}
+
+.broadcast-playing {
+  color: var(--accent);
+}
+
+.broadcast-done {
+  color: var(--ok);
+}
+
+.broadcast-blocked {
+  color: var(--warn);
+}
+
+.broadcast-error {
+  color: var(--bad);
+}
+
 .btn-primary {
   width: 100%;
   padding: 11px;

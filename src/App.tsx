@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Card } from './components/Card';
+import { createBroadcastPlayer, describeBroadcastBlockers, type BroadcastPlayer, type BroadcastState } from './lib/broadcast';
+import { createBrowserSpeechAdapter } from './lib/speech';
 import { DRAFT_MESSAGES, clearDraft, getDefaultStorage, loadDraft, saveDraft } from './lib/draft';
 import { collectBoundaries, measureCard, measureTopCorrection, type OverflowResult } from './lib/layout';
 import { printCard } from './lib/print';
@@ -7,6 +9,8 @@ import { moveStep, type StepMoveDirection } from './lib/reorder';
 import { resolveTemplateApply } from './lib/templates';
 import { codePointLength, normalizeField, validateCard } from './lib/validation';
 import { EMPTY_DATA, LIMITS, RISK_LEVELS, type CardData } from './types';
+
+const IDLE_BROADCAST: BroadcastState = { status: 'idle', queue: [], currentIndex: 0, message: null };
 
 /** 草稿保存时间的展示格式（本地时区、24 小时制）。 */
 function formatDraftTime(iso: string): string {
@@ -36,6 +40,21 @@ export function App() {
   const storageRef = useRef<Storage | null>(null);
   // 用户首次输入后才自动保存；恢复草稿与清空重置不算编辑。
   const dirtyRef = useRef(false);
+
+  // 逐段语音播报器：浏览器语音经可注入适配器封装（合成/结束/错误）。
+  // 播放器在整个组件生命周期内复用，回调只写入 React 状态；卸载时停止。
+  const [broadcast, setBroadcast] = useState<BroadcastState>(IDLE_BROADCAST);
+  const playerRef = useRef<BroadcastPlayer | null>(null);
+  const speechSupportedRef = useRef(true);
+  if (playerRef.current === null) {
+    const adapter = createBrowserSpeechAdapter();
+    speechSupportedRef.current = adapter.supported;
+    playerRef.current = createBroadcastPlayer({
+      speech: adapter,
+      onUpdate: (next) => setBroadcast(next),
+    });
+  }
+  useEffect(() => () => playerRef.current?.stop(), []);
 
   const validation = validateCard(data);
 
@@ -212,7 +231,6 @@ export function App() {
   };
 
   const canPrint = validation.valid && overflow !== null && overflow.ok;
-
   const handlePrint = async () => {
     // 打印前再次实测，杜绝结论过期。
     remeasure();
@@ -227,6 +245,29 @@ export function App() {
       setPrintError(err instanceof Error ? err.message : '打印调用失败，请重试。');
     }
   };
+
+  /** 播放中重复点击“开始播报”：播放器契约保证幂等，不叠加声音。 */
+  const isBroadcasting = broadcast.status === 'playing';
+  /** 浏览器不支持语音合成时，开始入口保持禁用并说明原因。 */
+  const speechReady = speechSupportedRef.current;
+
+  /**
+   * 启动播报：表单未通过字段校验时不启动，并说明缺少/非法的字段；
+   * 通过后由播放器从当前 data 快照生成固定队列，本轮编辑不再影响队列，
+   * 下次启动才采用新内容。浏览器不支持语音时播放器给出明确反馈。
+   */
+  const handleStartBroadcast = () => {
+    if (!validation.valid) return; // 按钮已禁用，这里再兜底，不取快照
+    playerRef.current?.start(data);
+  };
+
+  /** 停止播报：立即取消当前朗读与余下队列，回到待播状态。 */
+  const handleStopBroadcast = () => {
+    playerRef.current?.stop();
+  };
+
+  // 未通过字段校验时，向负责人明确列出不可启动的原因。
+  const broadcastBlockers = validation.valid ? [] : describeBroadcastBlockers(validation.errors);
 
   const nameLen = codePointLength(normalizeField(data.name));
   const locationLen = codePointLength(normalizeField(data.location));
@@ -408,6 +449,49 @@ export function App() {
           )}
           {printError && <p className="verdict-bad">{printError}</p>}
         </div>
+
+        {/* 语音播报：仅屏幕端使用，打印媒体下整个录入面板隐藏，不出现在纸质卡片上。 */}
+        <section className="broadcast-panel" aria-label="应急卡语音播报">
+          <div className="broadcast-actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleStartBroadcast}
+              disabled={!validation.valid || isBroadcasting || !speechReady}
+              aria-describedby="broadcast-hint"
+            >
+              开始播报
+            </button>
+            <button type="button" className="btn-secondary" onClick={handleStopBroadcast} disabled={!isBroadcasting}>
+              停止播报
+            </button>
+          </div>
+          <div className="broadcast-hint" id="broadcast-hint" role="status" aria-live="polite">
+            {!speechReady && <p className="broadcast-error">当前浏览器不支持语音合成，无法播报应急卡内容。</p>}
+            {speechReady && isBroadcasting && (
+              <p className="broadcast-playing">
+                正在播报（{Math.min(broadcast.currentIndex + 1, broadcast.queue.length)}/{broadcast.queue.length}）：
+                {broadcast.queue[broadcast.currentIndex]?.label ?? ''}
+                ；播报期间编辑不影响本轮队列。
+              </p>
+            )}
+            {speechReady && broadcast.status === 'done' && (
+              <p className="broadcast-done">播报已完成，全部 {broadcast.queue.length} 段朗读结束。</p>
+            )}
+            {speechReady && broadcast.status === 'error' && (
+              <p className="broadcast-error">{broadcast.message}</p>
+            )}
+            {/* 非播放状态下若字段校验未过，始终说明“下一轮”不能启动的原因。 */}
+            {speechReady && !isBroadcasting && !validation.valid && (
+              <p className="broadcast-blocked">
+                表单尚未通过字段校验，无法开始播报：请先完善{broadcastBlockers.join('、')}。
+              </p>
+            )}
+            {speechReady && broadcast.status === 'idle' && validation.valid && (
+              <p className="broadcast-idle">从当前有效卡片内容生成固定队列，依次朗读名称、库位、风险等级与各步骤。</p>
+            )}
+          </div>
+        </section>
 
         <button type="button" className="btn-primary" onClick={handlePrint} disabled={!canPrint}>
           打印应急卡
