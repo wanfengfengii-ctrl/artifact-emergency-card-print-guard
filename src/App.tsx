@@ -190,7 +190,8 @@ export function App() {
   };
 
   /**
-   * 清空草稿：删除存储、重置为空表单，并撤销旧测量结论与打印错误。
+   * 清空草稿：删除存储、重置为空表单，并撤销旧测量结论、打印错误与
+   * 换位状态消息（空表单下不残留此前移动成功的序号提示）。
    * 删除未确认成功时整体中止：保留当前填写内容与旧草稿，
    * 避免"页面已空、重开后旧草稿复活"的双重不一致，用户可重试。
    */
@@ -206,6 +207,7 @@ export function App() {
     setDraftError(null);
     setPrintError(null);
     setOverflow(null);
+    setMoveNotice(null);
     setData(EMPTY_DATA);
   };
 
@@ -323,48 +325,52 @@ export function App() {
           <div className="steps-edit">
             {data.steps.map((step, index) => {
               const len = codePointLength(normalizeField(step));
+              const stepError = validation.errors[`step_${index}`];
               return (
-                <div className="step-edit" key={index}>
-                  <span className="step-edit-no">{index + 1}.</span>
-                  <input
-                    ref={(el) => {
-                      stepInputRefs.current[index] = el;
-                    }}
-                    type="text"
-                    value={step}
-                    maxLength={200}
-                    placeholder={`第 ${index + 1} 步（1—${LIMITS.step.max} 个码点，当前 ${len}）`}
-                    onChange={(e) => updateStep(index, e.target.value)}
-                    aria-invalid={Boolean(validation.errors[`step_${index}`])}
-                  />
-                  <button
-                    type="button"
-                    className="btn-small"
-                    onClick={() => moveStepAt(index, 'up')}
-                    disabled={index === 0}
-                    aria-label={`上移第 ${index + 1} 步`}
-                    title={index === 0 ? '已是第一条，无法上移' : '向上移动一位'}
-                  >
-                    上移
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-small"
-                    onClick={() => moveStepAt(index, 'down')}
-                    disabled={index === data.steps.length - 1}
-                    aria-label={`下移第 ${index + 1} 步`}
-                    title={index === data.steps.length - 1 ? '已是最后一条，无法下移' : '向下移动一位'}
-                  >
-                    下移
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-small"
-                    onClick={() => removeStep(index)}
-                    disabled={data.steps.length <= LIMITS.steps.min}
-                  >
-                    删除
-                  </button>
+                <div className="step-edit-wrap" key={index}>
+                  <div className="step-edit">
+                    <span className="step-edit-no">{index + 1}.</span>
+                    <input
+                      ref={(el) => {
+                        stepInputRefs.current[index] = el;
+                      }}
+                      type="text"
+                      value={step}
+                      maxLength={200}
+                      placeholder={`第 ${index + 1} 步（1—${LIMITS.step.max} 个码点，当前 ${len}）`}
+                      onChange={(e) => updateStep(index, e.target.value)}
+                      aria-invalid={Boolean(stepError)}
+                    />
+                    <button
+                      type="button"
+                      className="btn-small"
+                      onClick={() => moveStepAt(index, 'up')}
+                      disabled={index === 0}
+                      aria-label={`上移第 ${index + 1} 步`}
+                      title={index === 0 ? '已是第一条，无法上移' : '向上移动一位'}
+                    >
+                      上移
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-small"
+                      onClick={() => moveStepAt(index, 'down')}
+                      disabled={index === data.steps.length - 1}
+                      aria-label={`下移第 ${index + 1} 步`}
+                      title={index === data.steps.length - 1 ? '已是最后一条，无法下移' : '向下移动一位'}
+                    >
+                      下移
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-small"
+                      onClick={() => removeStep(index)}
+                      disabled={data.steps.length <= LIMITS.steps.min}
+                    >
+                      删除
+                    </button>
+                  </div>
+                  {stepError && <span className="field-error">{stepError}</span>}
                 </div>
               );
             })}

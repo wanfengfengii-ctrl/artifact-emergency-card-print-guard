@@ -160,6 +160,12 @@ body {
   color: var(--accent);
 }
 
+.step-edit-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .step-edit {
   display: flex;
   align-items: center;
