@@ -154,23 +154,53 @@ describe('损坏草稿隔离', () => {
 });
 
 describe('clearDraft', () => {
-  it('清空后回到无草稿状态', () => {
+  it('清空成功返回 ok，并回到无草稿状态', () => {
     const storage = new MemoryStorage();
     saveDraft(storage, sampleData(), SAVED_AT);
     expect(loadDraft(storage).kind).toBe('ok');
-    clearDraft(storage);
+    expect(clearDraft(storage).kind).toBe('ok');
     expect(loadDraft(storage).kind).toBe('none');
     expect(storage.getItem(DRAFT_STORAGE_KEY)).toBeNull();
   });
 
-  it('存储不可用或删除抛错时静默忽略', () => {
-    expect(() => clearDraft(null)).not.toThrow();
+  it('存储为 null 或删除抛错时返回 failed，不抛出异常', () => {
+    expect(clearDraft(null).kind).toBe('failed');
     class RemoveThrowingStorage extends MemoryStorage {
       override removeItem(): void {
         throw new DOMException('denied', 'SecurityError');
       }
     }
-    expect(() => clearDraft(new RemoveThrowingStorage())).not.toThrow();
+    const storage = new RemoveThrowingStorage();
+    saveDraft(storage, sampleData(), SAVED_AT);
+    expect(clearDraft(storage).kind).toBe('failed');
+  });
+
+  it('删除静默失败（旧值仍可读出）时返回 failed', () => {
+    class SilentFailStorage extends MemoryStorage {
+      override removeItem(): void {
+        // 不抛错但也不删除，模拟失效的存储后端。
+      }
+    }
+    const storage = new SilentFailStorage();
+    saveDraft(storage, sampleData(), SAVED_AT);
+    expect(clearDraft(storage).kind).toBe('failed');
+  });
+
+  it('删除失败时旧草稿仍在存储中（调用方需提示会复活）', () => {
+    class RemoveThrowingStorage extends MemoryStorage {
+      override removeItem(): void {
+        throw new DOMException('denied', 'SecurityError');
+      }
+    }
+    const storage = new RemoveThrowingStorage();
+    saveDraft(storage, sampleData(), SAVED_AT);
+    expect(clearDraft(storage).kind).toBe('failed');
+    // 旧草稿未被删除：重开页面仍会读到，因此失败必须暴露给用户。
+    const result = loadDraft(storage);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.draft.data).toEqual(sampleData());
+    }
   });
 });
 

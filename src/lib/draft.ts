@@ -20,6 +20,7 @@ export const DRAFT_MESSAGES = {
   unavailable: '本机存储不可用，草稿无法自动保存；当前页面仍可正常编辑。',
   quota: '本机存储空间不足（配额超限），草稿保存失败；当前页面仍可正常编辑。',
   corrupt: '检测到已损坏的草稿数据，已忽略且未载入表单；当前页面仍可正常编辑。',
+  clearFailed: '本机草稿删除失败，旧草稿可能在重新打开页面后再次出现；当前页面仍可正常编辑。',
 } as const;
 
 export type DraftLoadResult =
@@ -115,12 +116,19 @@ export function saveDraft(storage: Storage | null, data: CardData, now: Date = n
   }
 }
 
-/** 删除草稿。清理失败静默忽略，不影响页面可编辑。 */
-export function clearDraft(storage: Storage | null): void {
-  if (!storage) return;
+export type DraftClearResult = { kind: 'ok' } | { kind: 'failed' };
+
+/**
+ * 删除草稿并回读确认确实已删除。
+ * 删除抛错、回读抛错或旧值仍在（静默失败）时返回 failed，
+ * 调用方必须提示用户：旧草稿未被删除，重开页面后会再次出现。
+ */
+export function clearDraft(storage: Storage | null): DraftClearResult {
+  if (!storage) return { kind: 'failed' };
   try {
     storage.removeItem(DRAFT_STORAGE_KEY);
+    return storage.getItem(DRAFT_STORAGE_KEY) === null ? { kind: 'ok' } : { kind: 'failed' };
   } catch {
-    // 忽略：存储不可用时本就无草稿可清。
+    return { kind: 'failed' };
   }
 }
