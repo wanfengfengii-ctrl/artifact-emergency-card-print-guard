@@ -4,8 +4,12 @@
 **依据浏览器实际布局测量全部文字与编号边界**，任一边界越过安全区即标明
 对应边缘并禁用打印。无后端、无任何在线依赖，字体随应用打包。
 
+选定风险等级后可一键**套用推荐步骤**：系统按类型安全的“风险等级 →
+审核步骤”映射生成完整步骤数组，带入后即可按现场情况增删改；已有非空
+步骤时会先确认覆盖，取消则步骤、草稿与测量结论全部原样保留。
+
 - 技术栈：TypeScript + React 18 + Vite 5 + CSS Paged Media（`@page` / `@media print`）
-- 测试：Vitest（单元测试 21 项）
+- 测试：Vitest（单元测试 50 项）+ Playwright（端到端 2 项）
 - 部署：Docker Compose（nginx 静态页面服务 + 一次性 verify 服务）
 
 ## 本地开发
@@ -14,9 +18,17 @@
 npm install
 npm run dev        # 开发服务器
 npm test           # Vitest 单元测试
+npm run test:e2e   # Playwright 端到端测试（需先准备浏览器，见下）
 npm run build      # 类型检查 + 生产构建到 dist/
 npm run preview    # 预览生产构建
-npm run verify     # 一次性校验：测试 + 构建
+npm run verify     # 一次性校验：单元测试 + 构建
+```
+
+端到端测试需要 Chromium：
+
+```bash
+npx playwright install --with-deps chromium   # 常规环境（需 root/sudo）
+./scripts/install-browser-deps.sh             # 无 root 的 Linux：本地解压系统库到 .local-libs/
 ```
 
 ## 表单规则（去首尾空白后按 Unicode 码点计数）
@@ -76,6 +88,16 @@ WEB_PORT=9090 docker compose up --build -d
 docker compose run --rm verify
 ```
 
+## 套用推荐步骤
+
+- 风险等级（优先抢救 / 稳定转移 / 原位防护）各对应一组经审核的处置步骤，
+  映射见 `src/lib/templates.ts`（`Record<RiskLevel, ...>`，类型层面保证全覆盖）。
+- 未选择风险等级时“套用推荐步骤”按钮禁用，并在旁提示原因。
+- 已有任一非空步骤时先弹确认；取消则不做任何状态变更（步骤、保存时间、
+  测量结论、打印可用性原样保留），也不会产生草稿写入。
+- 套用沿既有编辑链路立即进入字段校验、草稿自动保存、卡片渲染与安全区重测；
+  带入的步骤可继续增删改，超长或越界仍由原校验与真实字形测量阻止打印。
+
 ## 目录结构
 
 ```
@@ -85,7 +107,11 @@ src/
     validation.ts          # 码点计数与表单校验
     layout.ts              # 安全区测量、真实文字边界收集
     print.ts               # 浏览器打印调用与错误提示
+    draft.ts               # 本机草稿的保存、恢复与清空
+    templates.ts           # 风险等级 → 推荐处置步骤映射与套用决策
   components/Card.tsx      # A5 卡片
   App.tsx                  # 录入表单 + 结论 + 打印
   styles/app.css           # 屏幕与打印样式（CSS Paged Media）
+e2e/                       # Playwright 端到端测试
+scripts/install-browser-deps.sh  # 无 root 环境的浏览器依赖准备
 ```

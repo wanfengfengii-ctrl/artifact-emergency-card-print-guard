@@ -138,6 +138,22 @@ body {
   gap: 8px;
 }
 
+.template-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.template-bar .btn-secondary {
+  align-self: auto;
+}
+
+.template-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .step-edit {
   display: flex;
   align-items: center;

@@ -3,6 +3,7 @@ import { Card } from './components/Card';
 import { DRAFT_MESSAGES, clearDraft, getDefaultStorage, loadDraft, saveDraft } from './lib/draft';
 import { collectBoundaries, measureCard, measureTopCorrection, type OverflowResult } from './lib/layout';
 import { printCard } from './lib/print';
+import { resolveTemplateApply } from './lib/templates';
 import { codePointLength, normalizeField, validateCard } from './lib/validation';
 import { EMPTY_DATA, LIMITS, RISK_LEVELS, type CardData } from './types';
 
@@ -142,6 +143,20 @@ export function App() {
   };
 
   /**
+   * 套用推荐步骤：把经审核的模板步骤带入表单，沿既有编辑链路
+   * 触发字段校验、草稿自动保存、卡片渲染与安全区重测。
+   * 已有非空步骤时先确认覆盖；取消确认时不触碰任何状态——
+   * 步骤、保存时间、测量结论与打印可用性全部原样保留。
+   */
+  const handleApplyTemplate = () => {
+    const outcome = resolveTemplateApply(data.risk, data.steps, () =>
+      window.confirm('已有填写的处置步骤，套用推荐步骤将覆盖现有内容，确定继续吗？'),
+    );
+    if (outcome.kind !== 'applied') return;
+    applyEdit((prev) => ({ ...prev, steps: outcome.steps }));
+  };
+
+  /**
    * 清空草稿：删除存储、重置为空表单，并撤销旧测量结论与打印错误。
    * 删除未确认成功时整体中止：保留当前填写内容与旧草稿，
    * 避免"页面已空、重开后旧草稿复活"的双重不一致，用户可重试。
@@ -261,6 +276,17 @@ export function App() {
           <span className="field-label">
             处置步骤（{data.steps.length}/{LIMITS.steps.max}）
           </span>
+          <div className="template-bar">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleApplyTemplate}
+              disabled={data.risk === ''}
+            >
+              套用推荐步骤
+            </button>
+            {data.risk === '' && <span className="template-hint">请先选择风险等级，再套用推荐步骤。</span>}
+          </div>
           <div className="steps-edit">
             {data.steps.map((step, index) => {
               const len = codePointLength(normalizeField(step));
