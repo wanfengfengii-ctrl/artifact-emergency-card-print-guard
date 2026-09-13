@@ -130,17 +130,21 @@ export function App() {
 
   /**
    * 清空草稿：删除存储、重置为空表单，并撤销旧测量结论与打印错误。
-   * 删除未确认成功时表单仍重置，但必须提示旧草稿可能在重开后复活。
+   * 删除未确认成功时整体中止：保留当前填写内容与旧草稿，
+   * 避免"页面已空、重开后旧草稿复活"的双重不一致，用户可重试。
    */
   const handleClearDraft = () => {
     if (!window.confirm('确定清空本机草稿并重置为空表单吗？')) return;
-    const outcome = clearDraft(storageRef.current);
+    if (clearDraft(storageRef.current).kind === 'failed') {
+      setDraftError(DRAFT_MESSAGES.clearFailed);
+      return;
+    }
     dirtyRef.current = false; // 空表单不立即回写为新草稿
     setRestoredAt(null);
+    setDraftError(null);
     setPrintError(null);
     setOverflow(null);
     setData(EMPTY_DATA);
-    setDraftError(outcome.kind === 'ok' ? null : DRAFT_MESSAGES.clearFailed);
   };
 
   const canPrint = validation.valid && overflow !== null && overflow.ok;

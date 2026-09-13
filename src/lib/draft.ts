@@ -20,7 +20,7 @@ export const DRAFT_MESSAGES = {
   unavailable: '本机存储不可用，草稿无法自动保存；当前页面仍可正常编辑。',
   quota: '本机存储空间不足（配额超限），草稿保存失败；当前页面仍可正常编辑。',
   corrupt: '检测到已损坏的草稿数据，已忽略且未载入表单；当前页面仍可正常编辑。',
-  clearFailed: '本机草稿删除失败，旧草稿可能在重新打开页面后再次出现；当前页面仍可正常编辑。',
+  clearFailed: '本机草稿删除失败，当前填写内容已保留；旧草稿可能在重新打开页面后再次出现，请重试清空。',
 } as const;
 
 export type DraftLoadResult =
