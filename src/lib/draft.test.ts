@@ -83,6 +83,17 @@ describe('saveDraft / loadDraft 往返', () => {
     }
   });
 
+  it('保存成功时带回本次写入的更新时间，供界面显示最近保存时刻', () => {
+    const storage = new MemoryStorage();
+    const first = saveDraft(storage, sampleData(), SAVED_AT);
+    expect(first).toEqual({ kind: 'ok', updatedAt: SAVED_AT.toISOString() });
+
+    // 再次保存（如恢复旧草稿后继续编辑）应带回新的时刻而非首次保存时间。
+    const later = new Date('2026-09-13T11:05:00.000Z');
+    const second = saveDraft(storage, sampleData(), later);
+    expect(second).toEqual({ kind: 'ok', updatedAt: later.toISOString() });
+  });
+
   it('存储为 null 或读写抛错时报告 unavailable，不中断流程', () => {
     expect(loadDraft(null).kind).toBe('unavailable');
     expect(saveDraft(null, sampleData()).kind).toBe('unavailable');

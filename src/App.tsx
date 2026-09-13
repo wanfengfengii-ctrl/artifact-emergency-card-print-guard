@@ -17,14 +17,16 @@ export function App() {
   // 旧结论在每次编辑时立即撤销：null 表示尚无结论。
   const [overflow, setOverflow] = useState<OverflowResult | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
-  // 已恢复草稿的保存时间；null 表示本次会话未恢复草稿。
-  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+  // 本机草稿的最近保存时间（恢复自存储或本会话自动保存）；null 表示当前无已存草稿。
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  // 当前保存时间是否来自“恢复旧草稿”（区别于本会话自动保存，仅用于提示措辞）。
+  const [draftFromRestore, setDraftFromRestore] = useState(false);
   // 存储不可用/配额超限/草稿损坏的可区分提示。
   const [draftError, setDraftError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   // 已应用的顶部补偿量，避免重复写样式。
   const correctionRef = useRef(0);
-  // 挂载时解析一次本机存储；null 表示存储不可用。
+  // 挂载时解析一次本机存储；null 表示存储不可用（自动保存时会重试解析）。
   const storageRef = useRef<Storage | null>(null);
   // 用户首次输入后才自动保存；恢复草稿与清空重置不算编辑。
   const dirtyRef = useRef(false);
@@ -81,7 +83,8 @@ export function App() {
     storageRef.current = storage;
     const result = loadDraft(storage);
     if (result.kind === 'ok') {
-      setRestoredAt(result.draft.updatedAt);
+      setDraftSavedAt(result.draft.updatedAt);
+      setDraftFromRestore(true);
       setData(result.draft.data);
     } else if (result.kind === 'corrupt') {
       setDraftError(DRAFT_MESSAGES.corrupt);
@@ -90,13 +93,23 @@ export function App() {
     }
   }, []);
 
-  // 用户首次输入后自动保存完整草稿；成功保存消除此前的存储失败提示。
+  // 用户首次输入后自动保存完整草稿；成功保存消除此前的存储失败提示，
+  // 并把提示条时间更新为本次保存时刻。
   useEffect(() => {
     if (!dirtyRef.current) return;
+    // 挂载时的存储失败可能是暂时性的：尚未解析到存储时每次保存前重试，
+    // 存储恢复后即可正常保存并消除提示。
+    if (storageRef.current === null) {
+      storageRef.current = getDefaultStorage();
+    }
     const outcome = saveDraft(storageRef.current, data);
-    setDraftError(
-      outcome.kind === 'ok' ? null : outcome.kind === 'quota' ? DRAFT_MESSAGES.quota : DRAFT_MESSAGES.unavailable,
-    );
+    if (outcome.kind === 'ok') {
+      setDraftSavedAt(outcome.updatedAt);
+      setDraftFromRestore(false);
+      setDraftError(null);
+    } else {
+      setDraftError(outcome.kind === 'quota' ? DRAFT_MESSAGES.quota : DRAFT_MESSAGES.unavailable);
+    }
   }, [data]);
 
   /** 所有编辑共用的入口：撤销旧结论与打印错误，并标记需要自动保存。 */
@@ -140,7 +153,8 @@ export function App() {
       return;
     }
     dirtyRef.current = false; // 空表单不立即回写为新草稿
-    setRestoredAt(null);
+    setDraftSavedAt(null);
+    setDraftFromRestore(false);
     setDraftError(null);
     setPrintError(null);
     setOverflow(null);
@@ -172,9 +186,15 @@ export function App() {
       <section className="form-panel" aria-label="藏品信息录入">
         <h1 className="form-title">库房渗水 · 文物应急处置卡</h1>
 
-        {(restoredAt !== null || draftError !== null) && (
+        {(draftSavedAt !== null || draftError !== null) && (
           <div className="draft-bar" role="status" aria-live="polite">
-            {restoredAt !== null && <p className="draft-restored">已恢复草稿（保存于 {formatDraftTime(restoredAt)}）</p>}
+            {draftSavedAt !== null && (
+              <p className="draft-restored">
+                {draftFromRestore
+                  ? `已恢复草稿（保存于 ${formatDraftTime(draftSavedAt)}）`
+                  : `草稿已自动保存（${formatDraftTime(draftSavedAt)}）`}
+              </p>
+            )}
             {draftError !== null && <p className="draft-error">{draftError}</p>}
             <button type="button" className="btn-small" onClick={handleClearDraft}>
               清空草稿

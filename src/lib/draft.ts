@@ -29,7 +29,10 @@ export type DraftLoadResult =
   | { kind: 'corrupt' }
   | { kind: 'unavailable' };
 
-export type DraftSaveResult = { kind: 'ok' } | { kind: 'quota' } | { kind: 'unavailable' };
+export type DraftSaveResult =
+  | { kind: 'ok'; updatedAt: string }
+  | { kind: 'quota' }
+  | { kind: 'unavailable' };
 
 /**
  * 校验草稿负载的对象结构、字段类型与风险枚举。
@@ -100,7 +103,7 @@ export function loadDraft(storage: Storage | null): DraftLoadResult {
   }
 }
 
-/** 写入草稿。配额超限与其他存储失败分开报告，便于给出可区分提示。 */
+/** 写入草稿。配额超限与其他存储失败分开报告，便于给出可区分提示；成功时带回本次写入时间。 */
 export function saveDraft(storage: Storage | null, data: CardData, now: Date = new Date()): DraftSaveResult {
   if (!storage) return { kind: 'unavailable' };
   const envelope: DraftEnvelope = {
@@ -110,7 +113,7 @@ export function saveDraft(storage: Storage | null, data: CardData, now: Date = n
   };
   try {
     storage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(envelope));
-    return { kind: 'ok' };
+    return { kind: 'ok', updatedAt: envelope.updatedAt };
   } catch (err) {
     return { kind: isQuotaError(err) ? 'quota' : 'unavailable' };
   }
